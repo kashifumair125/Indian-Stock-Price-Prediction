@@ -24,8 +24,11 @@ def main():
     print("🚀 Indian Stock Price Prediction System")
     print("=" * 60)
     
-    # Get stock symbol from user or use default
-    symbol = input(f"Enter stock symbol (default: {config.DEFAULT_STOCK}): ").strip()
+    # Get stock symbol from user or use default (non-interactive safe)
+    try:
+        symbol = input(f"Enter stock symbol (default: {config.DEFAULT_STOCK}): ").strip()
+    except EOFError:
+        symbol = ""
     if not symbol:
         symbol = config.DEFAULT_STOCK
     

@@ -1,0 +1,187 @@
+name: Test and Deploy Preparation
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: [3.9, 3.10, 3.11]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements_streamlit.txt
+    
+    - name: Run deployment tests
+      run: |
+        python test_deployment.py
+    
+    - name: Test imports
+      run: |
+        python -c "
+        import streamlit as st
+        import pandas as pd
+        import numpy as np
+        import plotly.graph_objects as go
+        import yfinance as yf
+        print('✅ All core imports successful')
+        "
+    
+    - name: Test app modules
+      run: |
+        python -c "
+        from config import INDIAN_STOCKS, DEFAULT_STOCK
+        from advanced_indicators import AdvancedTechnicalIndicators
+        from ensemble_models import EnsembleModels
+        from realtime_data import RealTimeDataFeed
+        print('✅ All app modules imported successfully')
+        print(f'Default stock: {DEFAULT_STOCK}')
+        print(f'Available stocks: {len(INDIAN_STOCKS)}')
+        "
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black
+    
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Check code formatting with black
+      run: |
+        black --check --diff .
+
+  security:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety
+    
+    - name: Check for security vulnerabilities
+      run: |
+        safety check --json --output .safety-report.json || true
+    
+    - name: Upload safety report
+      uses: actions/upload-artifact@v3
+      with:
+        name: safety-report
+        path: .safety-report.json
+
+  build:
+    needs: [test, lint, security]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements_streamlit.txt
+    
+    - name: Create deployment package
+      run: |
+        mkdir -p deployment
+        cp -r *.py deployment/
+        cp -r *.md deployment/
+        cp -r requirements*.txt deployment/
+        cp -r .streamlit deployment/
+        cp -r src deployment/
+        cp -r config.py deployment/
+        cp -r advanced_indicators.py deployment/
+        cp -r ensemble_models.py deployment/
+        cp -r realtime_data.py deployment/
+        cp -r portfolio_analyzer.py deployment/
+        cp -r stock_predictor.py deployment/
+        
+        # Remove unnecessary files
+        rm -rf deployment/data
+        rm -rf deployment/models
+        rm -rf deployment/results
+        rm -rf deployment/plots
+        rm -rf deployment/predictions
+        rm -rf deployment/notebooks
+        rm -rf deployment/.history
+        rm -rf deployment/__pycache__
+        rm -rf deployment/*.pyc
+        
+        echo "Deployment package created successfully"
+    
+    - name: Upload deployment package
+      uses: actions/upload-artifact@v3
+      with:
+        name: deployment-package
+        path: deployment/
+    
+    - name: Create release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        release_name: Release v${{ github.run_number }}
+        body: |
+          Automated release for deployment to Streamlit Cloud
+          
+          Changes in this release:
+          - Automated testing and validation
+          - Security vulnerability checks
+          - Code quality validation
+          
+          Ready for deployment to Streamlit Cloud!
+        draft: false
+        prerelease: false

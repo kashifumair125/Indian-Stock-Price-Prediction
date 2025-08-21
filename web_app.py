@@ -6,7 +6,9 @@ Date: 2025
 A beautiful Streamlit web interface for the stock prediction system.
 Run with: streamlit run web_app.py
 """
-
+from advanced_indicators import AdvancedTechnicalIndicators
+from ensemble_models import EnsembleModels
+from realtime_data import RealTimeDataFeed, RealTimeAnalyzer
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -18,6 +20,8 @@ import warnings
 from datetime import datetime, timedelta
 import time
 import yfinance as yf
+from config import CURRENCY_SYMBOLS, CURRENCY_SYMBOL, LIVE_REFRESH_SECONDS
+import requests
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -29,6 +33,70 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Add custom CSS for sidebar toggle
+st.markdown("""
+<style>
+    /* Custom sidebar toggle button */
+    .sidebar-toggle-btn {
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        z-index: 9999;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 60px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        transition: all 0.3s ease;
+        text-decoration: none;
+    }
+    
+    .sidebar-toggle-btn:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    }
+    
+    /* Sidebar banner */
+    .sidebar-banner {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+        margin: 20px 0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    /* Hide sidebar when needed */
+    .sidebar-hidden {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    
+    /* Show sidebar when needed */
+    .sidebar-visible {
+        display: block !important;
+        visibility: visible !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Add experimental sidebar control
+try:
+    import streamlit as st
+    # Try to use experimental features for sidebar control
+    if hasattr(st, 'experimental_rerun'):
+        st.experimental_rerun = st.rerun
+except:
+    pass
 
 # Add src to path (if needed)
 sys.path.append('src')
@@ -164,6 +232,8 @@ st.markdown("""
     .stProgress > div > div > div > div {
         background: linear-gradient(90deg, #667eea, #764ba2);
     }
+    /* Make progress container full width */
+    .stProgress > div { width: 100% !important; }
     
     /* Metric styling */
     .metric-container {
@@ -192,6 +262,29 @@ st.markdown("""
         overflow: hidden;
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     }
+    
+    /* Redesigned pill-style for Popular Stocks buttons */
+    .popular-stock-btn button {
+        background: #ffffff !important;
+        color: #4b57c0 !important;
+        border: 2px solid #667eea !important;
+        border-radius: 9999px !important;
+        padding: 0.6rem 1.2rem !important;
+        font-weight: 700 !important;
+        font-size: 0.95rem !important;
+        width: 100% !important;
+        box-shadow: 0 4px 14px rgba(102, 126, 234, 0.12) !important;
+        transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+    }
+    .popular-stock-btn button:hover {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: #ffffff !important;
+        transform: translateY(-1px);
+        box-shadow: 0 8px 18px rgba(102, 126, 234, 0.25) !important;
+        border-color: transparent !important;
+    }
+    .popular-stock-btn button:focus { outline: none !important; box-shadow: 0 0 0 3px rgba(102,126,234,0.25) !important; }
+    .popular-stock-btn { margin-bottom: 0.3rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -286,6 +379,115 @@ EXTENDED_INDIAN_STOCKS = {
     'HAVELLS.NS': 'Havells India Limited',
 }
 
+@st.cache_data(ttl=300)
+def get_symbol_currency(symbol):
+    """Resolve currency code for a given symbol using yfinance fast_info/info."""
+    try:
+        ticker = yf.Ticker(symbol)
+        currency = None
+        # Prefer fast_info
+        try:
+            currency = getattr(ticker, 'fast_info', {}).get('currency')
+        except Exception:
+            currency = None
+        if not currency:
+            try:
+                info = ticker.get_info() if hasattr(ticker, 'get_info') else {}
+            except Exception:
+                info = {}
+            currency = info.get('currency') or info.get('financialCurrency')
+        return (currency or 'INR').upper()
+    except Exception:
+        return 'INR'
+
+def currency_symbol_for(symbol):
+    code = get_symbol_currency(symbol)
+    return CURRENCY_SYMBOLS.get(code, CURRENCY_SYMBOL)
+
+def format_price(symbol, value):
+    return f"{currency_symbol_for(symbol)}{value:.2f}"
+
+@st.cache_data(ttl=LIVE_REFRESH_SECONDS)
+def get_live_quote(symbol):
+    """Fetch near-real-time quote using yfinance; no API key required.
+    Returns dict: price, prev_close, change_pct, ts, currency.
+    """
+    data = {
+        'price': None,
+        'prev_close': None,
+        'change_pct': None,
+        'ts': None,
+        'currency': get_symbol_currency(symbol)
+    }
+    try:
+        t = yf.Ticker(symbol)
+        # Try fast_info first
+        fi = getattr(t, 'fast_info', {}) or {}
+        price = fi.get('last_price') or fi.get('lastPrice') or fi.get('regular_market_price') or fi.get('last_close')
+        prev_close = fi.get('previous_close') or fi.get('previousClose') or fi.get('last_close')
+        # Fallback to info
+        if price is None or prev_close is None:
+            try:
+                info = t.get_info() if hasattr(t, 'get_info') else {}
+            except Exception:
+                info = {}
+            price = price or info.get('currentPrice') or info.get('regularMarketPrice')
+            prev_close = prev_close or info.get('previousClose') or info.get('regularMarketPreviousClose')
+        # Fallback to 1m history last bar
+        if price is None:
+            hist = t.history(period="1d", interval="1m")
+            if not hist.empty:
+                price = float(hist['Close'].iloc[-1])
+                prev_close = prev_close or float(hist['Close'].iloc[-2]) if len(hist) > 1 else price
+                data['ts'] = hist.index[-1].to_pydatetime()
+        if data['ts'] is None:
+            data['ts'] = datetime.now()
+        data['price'] = float(price) if price is not None else None
+        data['prev_close'] = float(prev_close) if prev_close is not None else None
+        if data['price'] is not None and data['prev_close'] not in (None, 0):
+            data['change_pct'] = ((data['price'] - data['prev_close']) / data['prev_close']) * 100
+    except Exception:
+        pass
+    return data
+
+@st.cache_data(ttl=300)
+def search_symbols(query, max_results=20):
+    """Search global symbols using Yahoo Finance's public search endpoint.
+    No API key required.
+    """
+    try:
+        url = "https://query1.finance.yahoo.com/v1/finance/search"
+        params = {
+            'q': query,
+            'quotesCount': max_results,
+            'newsCount': 0,
+            'listsCount': 0,
+            'enableFuzzyQuery': True,
+        }
+        r = requests.get(url, params=params, timeout=5)
+        r.raise_for_status()
+        js = r.json()
+        quotes = js.get('quotes', [])
+        results = []
+        for q in quotes:
+            symbol = q.get('symbol')
+            shortname = q.get('shortname') or q.get('longname') or ''
+            exch = q.get('exchDisp') or q.get('exchange') or ''
+            currency = q.get('currency') or ''
+            quote_type = q.get('quoteType') or ''
+            if not symbol:
+                continue
+            results.append({
+                'symbol': symbol,
+                'label': f"{shortname} ({symbol}) - {exch} {('['+currency+']') if currency else ''}",
+                'currency': currency,
+                'exchange': exch,
+                'quote_type': quote_type,
+            })
+        return results
+    except Exception:
+        return []
+
 def show_animated_header():
     """Display animated header"""
     header_html = """
@@ -324,127 +526,515 @@ def create_custom_metric(title, value, delta=None, color="#1f77b4"):
 def main():
     """Main Streamlit application"""
     
+    # Initialize sidebar state
+    if 'sidebar_visible' not in st.session_state:
+        st.session_state.sidebar_visible = True
+    
     # Animated Header
     show_animated_header()
-    st.markdown("---")
     
-    # Sidebar with enhanced styling
-    with st.sidebar:
-        st.markdown("### 🎛️ Configuration Panel")
-        
-        # Stock selection with search
-        st.markdown("#### 📊 Stock Selection")
-        
-        # Search functionality
-        search_term = st.text_input("🔍 Search for a stock:", placeholder="e.g., TCS, Reliance, HDFC")
-        
-        if search_term:
-            # Filter stocks based on search
-            filtered_stocks = {k: v for k, v in EXTENDED_INDIAN_STOCKS.items() 
-                             if search_term.lower() in k.lower() or search_term.lower() in v.lower()}
-            stock_options = list(filtered_stocks.keys())
-        else:
-            stock_options = list(EXTENDED_INDIAN_STOCKS.keys())
-        
-        if stock_options:
-            selected_stock = st.selectbox(
-                "Select Stock Symbol:",
-                options=stock_options,
-                format_func=lambda x: f"{x} - {EXTENDED_INDIAN_STOCKS.get(x, 'Unknown')}",
-                index=0
-            )
-        else:
-            st.warning("No stocks found matching your search.")
-            selected_stock = "TCS.NS"
-        
-        # Time period selection with descriptions
-        st.markdown("#### 📅 Time Period")
-        period_options = {
-            '3mo': '3 Months (Short Term)',
-            '6mo': '6 Months (Medium Term)',
-            '1y': '1 Year (Recommended)',
-            '2y': '2 Years (Long Term)',
-            '5y': '5 Years (Very Long Term)'
+    # Add JavaScript-based sidebar toggle
+    st.markdown("""
+    <script>
+        // Function to toggle sidebar visibility
+        function toggleSidebarJS() {
+            const sidebar = document.querySelector('[data-testid="stSidebar"]') || 
+                           document.querySelector('.css-1d391kg') ||
+                           document.querySelector('.css-1lcbmhc');
+            if (sidebar) {
+                const currentDisplay = sidebar.style.display || getComputedStyle(sidebar).display;
+                if (currentDisplay === 'none') {
+                    sidebar.style.display = 'block';
+                    sidebar.style.visibility = 'visible';
+                    console.log('Sidebar shown via JavaScript');
+                } else {
+                    sidebar.style.display = 'none';
+                    sidebar.style.visibility = 'hidden';
+                    console.log('Sidebar hidden via JavaScript');
+                }
+            } else {
+                console.log('Sidebar element not found');
+            }
+        }
+        // Add keyboard shortcut
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
+                e.preventDefault();
+                toggleSidebarJS();
+            }
+        });
+    </script>
+    """, unsafe_allow_html=True)
+    
+    # Remove Sidebar Controls and Sidebar Control Panel sections
+    # (Removed: st.markdown("### 🔧 Sidebar Controls"), button groups, and status indicators)
+    
+    # Add floating sidebar toggle button with enhanced functionality
+    st.markdown("""
+    <div class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle Sidebar (Ctrl+Shift+S)">
+        📊
+    </div>
+    
+    <script>
+        function toggleSidebar() {
+            // Try multiple selectors to find the sidebar
+            const sidebarSelectors = [
+                '.css-1d391kg',           // Common Streamlit sidebar selector
+                '[data-testid="stSidebar"]', // Streamlit test ID
+                '.css-1lcbmhc',           // Alternative selector
+                '.css-1d391kg',           // Another common one
+                'aside[data-testid="stSidebar"]', // Semantic selector
+                '.css-1d391kg'            // Fallback
+            ];
+            
+            let sidebar = null;
+            for (let selector of sidebarSelectors) {
+                sidebar = document.querySelector(selector);
+                if (sidebar) break;
+            }
+            
+            if (sidebar) {
+                const currentDisplay = sidebar.style.display || getComputedStyle(sidebar).display;
+                
+                if (currentDisplay === 'none') {
+                    sidebar.style.display = 'block';
+                    sidebar.style.visibility = 'visible';
+                    document.title = '📊 Sidebar Visible';
+                    hideShowSidebarBanner();
+                    console.log('Sidebar shown');
+                } else {
+                    sidebar.style.display = 'none';
+                    sidebar.style.visibility = 'hidden';
+                    document.title = '📊 Sidebar Hidden';
+                    showSidebarBanner();
+                    console.log('Sidebar hidden');
+                }
+            } else {
+                console.log('Sidebar not found, trying alternative method...');
+                // Alternative method: try to toggle using Streamlit's internal state
+                try {
+                    // Try to trigger a click on the hamburger menu if it exists
+                    const hamburger = document.querySelector('[data-testid="collapsedControl"]');
+                    if (hamburger) {
+                        hamburger.click();
+                        console.log('Hamburger menu clicked');
+                    } else {
+                        console.log('Hamburger menu not found');
+                    }
+                } catch (e) {
+                    console.log('Alternative method failed:', e);
+                }
+            }
         }
         
-        selected_period = st.selectbox(
-            "Select Time Period:",
-            options=list(period_options.keys()),
-            format_func=lambda x: period_options[x],
-            index=2  # Default to 1 year
-        )
+        function showSidebarBanner() {
+            const banner = document.getElementById('show-sidebar-banner');
+            if (banner) {
+                banner.style.display = 'block';
+            }
+        }
         
-        # Model selection with explanations
-        st.markdown("#### 🤖 AI Models")
+        function hideShowSidebarBanner() {
+            const banner = document.getElementById('show-sidebar-banner');
+            if (banner) {
+                banner.style.display = 'none';
+            }
+        }
         
-        with st.expander("ℹ️ Model Information", expanded=False):
+        // Add keyboard shortcut (Ctrl+Shift+S or Cmd+Shift+S)
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
+                e.preventDefault();
+                toggleSidebar();
+            }
+        });
+        
+        // Check sidebar state on page load and periodically
+        function checkSidebarState() {
+            const sidebarSelectors = [
+                '.css-1d391kg',
+                '[data-testid="stSidebar"]',
+                '.css-1lcbmhc',
+                'aside[data-testid="stSidebar"]'
+            ];
+            
+            let sidebar = null;
+            for (let selector of sidebarSelectors) {
+                sidebar = document.querySelector(selector);
+                if (sidebar) break;
+            }
+            
+            if (sidebar) {
+                const currentDisplay = sidebar.style.display || getComputedStyle(sidebar).display;
+                if (currentDisplay === 'none') {
+                    showSidebarBanner();
+                } else {
+                    hideShowSidebarBanner();
+                }
+            }
+        }
+        
+        // Check on load and periodically
+        window.addEventListener('load', function() {
+            setTimeout(checkSidebarState, 1000);
+            // Check every 2 seconds
+            setInterval(checkSidebarState, 2000);
+        });
+        
+        // Also check when DOM changes
+        const observer = new MutationObserver(checkSidebarState);
+        observer.observe(document.body, { childList: true, subtree: true });
+    </script>
+    """, unsafe_allow_html=True)
+    
+    # Add prominent "Show Sidebar" button when sidebar is collapsed
+    st.markdown("""
+    <div id="show-sidebar-banner" style="
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+        margin: 20px 0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        display: none;
+    ">
+        <h3 style="margin: 0 0 10px 0;">📊 Sidebar Hidden</h3>
+        <p style="margin: 0 0 15px 0;">Click the floating button (📊) in the top-left corner or use <strong>Ctrl+Shift+S</strong> to show the sidebar again!</p>
+        <button onclick="toggleSidebar()" style="
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 16px;
+        ">📊 Show Sidebar</button>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Sidebar Control Panel removed per request
+    
+    # Enhanced Sidebar with improved UI/UX for beginners
+    with st.sidebar:
+        # Welcome header with helpful intro
+        st.markdown("""
+        <div style='text-align: center; padding: 10px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); 
+                    border-radius: 10px; margin-bottom: 20px;'>
+            <h2 style='color: white; margin: 0;'>🎯 Stock Prediction Hub</h2>
+            <p style='color: white; margin: 5px 0 0 0; font-size: 14px;'>AI-powered stock analysis made simple</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Quick start guide for beginners
+        with st.expander("🚀 New to Stock Prediction? Start Here!", expanded=False):
             st.markdown("""
-            **Linear Regression**: Fast, traditional statistical approach
+            **Quick Guide:**
+            1. **Choose a stock** you're interested in
+            2. **Select time period** (1 year recommended for beginners)
+            3. **Pick AI models** (all 3 selected gives best results)
+            4. **Click 'Start Analysis'** and let AI do the work!
             
-            **LSTM Neural Network**: Deep learning for complex patterns
-            
-            **Prophet**: Facebook's time-series forecasting (handles seasonality)
+            💡 **Tip**: Start with popular stocks like TCS or Reliance for reliable predictions.
             """)
         
-        use_linear = st.checkbox("📊 Linear Regression", value=True, help="Fast and interpretable")
-        use_lstm = st.checkbox("🧠 LSTM Neural Network", value=True, help="Deep learning model")
-        use_prophet = st.checkbox("📈 Prophet Time Series", value=True, help="Handles seasonality well")
+        # Stock Selection Section with better guidance
+        st.markdown("### 📊 Step 1: Choose Your Stock")
         
-        # Advanced settings
-        st.markdown("#### ⚙️ Advanced Settings")
-        with st.expander("🔧 Model Parameters", expanded=False):
-            prediction_days = st.slider("Days to Predict:", 7, 90, 30, help="Number of future days to predict")
-            lstm_epochs = st.slider("LSTM Training Epochs:", 10, 100, 50, help="More epochs = better training but slower")
-            
-            # Risk tolerance
-            st.markdown("**Risk Tolerance:**")
-            risk_tolerance = st.select_slider(
-                "Risk Level:",
-                options=["Conservative", "Moderate", "Aggressive"],
-                value="Moderate",
-                help="Affects prediction confidence intervals"
-            )
+        # Popular stocks shortcut
+        st.markdown("**🔥 Popular Stocks (Click to select):**")
+        popular_cols = st.columns(3)
+        popular_stocks = ["TCS.NS", "RELIANCE.NS", "HDFCBANK.NS"]
+        popular_names = ["TCS", "Reliance", "HDFC Bank"]
         
-        # Custom stock input
-        st.markdown("#### 📝 Custom Stock")
+        for i, (stock, name) in enumerate(zip(popular_stocks, popular_names)):
+            with popular_cols[i]:
+                # Add custom class to the button for styling
+                st.markdown(f'<div class="popular-stock-btn">', unsafe_allow_html=True)
+                if st.button(name, key=f"popular_{i}", use_container_width=True):
+                    st.session_state.quick_select = stock
+                st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Search functionality with better UX
+        st.markdown("**🔍 Or Search for Any Stock:**")
+        search_term = st.text_input(
+            "",
+            placeholder="Type stock name or symbol (e.g., TCS, Infosys, HDFC, AAPL, MSFT)",
+            help="💡 For Indian stocks, you can just type the company name!"
+        )
+        global_search = st.checkbox("Search globally (Yahoo)", value=False, help="Search all markets via Yahoo's public search")
+        
+        # Handle quick selection
+        if 'quick_select' in st.session_state:
+            selected_stock = st.session_state.quick_select
+            st.success(f"✅ Selected: {EXTENDED_INDIAN_STOCKS.get(selected_stock, selected_stock)}")
+            del st.session_state.quick_select
+        else:
+            if search_term and global_search:
+                results = search_symbols(search_term)
+                if results:
+                    labels = [r['label'] for r in results]
+                    choice = st.selectbox(
+                        "Available matches:",
+                        options=labels,
+                        index=0,
+                        help="Select from global search results"
+                    )
+                    match = next((r for r in results if r['label'] == choice), None)
+                    selected_stock = match['symbol'] if match else "TCS.NS"
+                else:
+                    st.warning("❌ No global matches found. Try a different search term.")
+                    # Fallback to Indian list
+                    selected_stock = "TCS.NS"
+            else:
+                if search_term:
+                    # Filter stocks based on search
+                    filtered_stocks = {k: v for k, v in EXTENDED_INDIAN_STOCKS.items() 
+                                     if search_term.lower() in k.lower() or search_term.lower() in v.lower()}
+                    stock_options = list(filtered_stocks.keys())
+                else:
+                    stock_options = list(EXTENDED_INDIAN_STOCKS.keys())
+                
+                if stock_options:
+                    selected_stock = st.selectbox(
+                        "Available matches:",
+                        options=stock_options,
+                        format_func=lambda x: f"📈 {EXTENDED_INDIAN_STOCKS.get(x, 'Unknown')} ({x})",
+                        index=0,
+                        help="Select from the filtered results"
+                    )
+                else:
+                    if search_term:
+                        st.warning("❌ No stocks found. Try a different search term.")
+                    selected_stock = "TCS.NS"
+        
+        # Custom stock input with better guidance
+        st.markdown("**📝 Custom Stock Symbol:**")
         custom_stock = st.text_input(
-            "Enter custom symbol:",
-            placeholder="e.g., GOOGL, AAPL, TSLA",
-            help="For NSE stocks, add .NS (e.g., SYMBOL.NS)"
+            "",
+            placeholder="Enter any stock symbol (e.g., GOOGL, AAPL, MSFT)",
+            help="🌍 For Indian stocks add .NS (e.g., WIPRO.NS), for US stocks use direct symbol"
         )
         
         if custom_stock:
             selected_stock = custom_stock.upper()
+            if not custom_stock.endswith('.NS') and not any(c in custom_stock for c in ['.', ':']):
+                st.info("💡 For Indian stocks, consider adding '.NS' at the end")
         
-        # Action buttons
+        st.markdown("---")
+
+        # Live snapshot for selected symbol
+        st.markdown("### ⏱️ Live Snapshot")
+        quote = get_live_quote(selected_stock)
+        if quote and quote.get('price') is not None:
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.metric(
+                    label=f"{selected_stock} Price",
+                    value=format_price(selected_stock, quote['price']),
+                    delta=f"{quote['change_pct']:+.2f}%" if quote.get('change_pct') is not None else None
+                )
+            with col_b:
+                ts = quote.get('ts')
+                ts_str = ts.strftime('%Y-%m-%d %H:%M:%S') if ts else '—'
+                st.caption(f"As of: {ts_str} | Currency: {get_symbol_currency(selected_stock)}")
+        else:
+            st.info("Live quote not available right now.")
+        if st.button("🔄 Refresh live quote", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+        
+        # Time Period Selection with beginner-friendly explanations
+        st.markdown("### 📅 Step 2: Choose Time Period")
+        
+        period_info = {
+            '3mo': {'name': '3 Months', 'desc': 'Short-term trends', 'icon': '⚡', 'level': 'Quick'},
+            '6mo': {'name': '6 Months', 'desc': 'Medium-term patterns', 'icon': '📊', 'level': 'Balanced'},
+            '1y': {'name': '1 Year', 'desc': 'Full market cycle', 'icon': '🎯', 'level': 'Recommended'},
+            '2y': {'name': '2 Years', 'desc': 'Long-term trends', 'icon': '📈', 'level': 'Comprehensive'},
+            '5y': {'name': '5 Years', 'desc': 'Historical patterns', 'icon': '🏛️', 'level': 'Deep Analysis'}
+        }
+        
+        selected_period = st.selectbox(
+            "Select analysis period:",
+            options=list(period_info.keys()),
+            format_func=lambda x: f"{period_info[x]['icon']} {period_info[x]['name']} - {period_info[x]['level']}",
+            index=2,  # Default to 1 year
+            help="💡 1 Year is recommended for beginners as it captures seasonal patterns"
+        )
+        
+        # Show period description
+        period_data = period_info[selected_period]
+        st.markdown(f"📋 **{period_data['name']}**: {period_data['desc']}")
+        
         st.markdown("---")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            start_analysis = st.button("🚀 Start Analysis", type="primary", use_container_width=True)
-        with col2:
-            clear_cache = st.button("🗑️ Clear Cache", use_container_width=True)
+        # AI Models Selection with clear explanations
+        st.markdown("### 🤖 Step 3: Choose AI Models")
         
+        st.markdown("💡 **Beginner Tip**: Select all models for most accurate predictions!")
+        
+        # Model selection with visual indicators
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            use_linear = st.checkbox("📊 Linear Regression", value=True)
+        with col2:
+            st.markdown("🟢 **Fast**")
+        
+        if use_linear:
+            st.markdown("   └─ *Great for identifying basic trends and patterns*")
+        
+        with col1:
+            use_lstm = st.checkbox("🧠 LSTM Neural Network", value=True)
+        with col2:
+            st.markdown("🟡 **Smart**")
+        
+        if use_lstm:
+            st.markdown("   └─ *Advanced AI that learns complex market patterns*")
+        
+        with col1:
+            use_prophet = st.checkbox("📈 Prophet Time Series", value=True)
+        with col2:
+            st.markdown("🔵 **Seasonal**")
+        
+        if use_prophet:
+            st.markdown("   └─ *Excellent at predicting seasonal market behavior*")
+        
+        # Model recommendation based on selection
+        selected_models = sum([use_linear, use_lstm, use_prophet])
+        if selected_models == 0:
+            st.error("⚠️ Please select at least one AI model!")
+        elif selected_models == 1:
+            st.warning("📢 Consider selecting more models for better accuracy!")
+        elif selected_models >= 2:
+            st.success("✅ Great choice! Multiple models provide better predictions.")
+        
+        st.markdown("---")
+        
+        # Advanced Settings (collapsed by default for beginners)
+        st.markdown("### ⚙️ Step 4: Fine-tune (Optional)")
+        
+        with st.expander("🔧 Advanced Settings", expanded=False):
+            st.markdown("*For experienced users - beginners can skip this*")
+            
+            prediction_days = st.slider(
+                "📅 Prediction horizon (days):",
+                7, 90, 30,
+                help="How many days into the future to predict"
+            )
+            
+            if use_lstm:
+                lstm_epochs = st.slider(
+                    "🧠 LSTM training intensity:",
+                    10, 100, 50,
+                    help="Higher values = better learning but slower processing"
+                )
+            else:
+                lstm_epochs = 50  # Default value when LSTM not selected
+            
+            st.markdown("**📊 Risk Analysis Level:**")
+            risk_tolerance = st.select_slider(
+                "",
+                options=["Conservative", "Moderate", "Aggressive"],
+                value="Moderate",
+                help="Affects confidence intervals in predictions"
+            )
+            
+            risk_descriptions = {
+                "Conservative": "🛡️ Safer predictions with wider confidence ranges",
+                "Moderate": "⚖️ Balanced approach with reasonable confidence",
+                "Aggressive": "🚀 Bold predictions with tighter confidence ranges"
+            }
+            st.markdown(f"*{risk_descriptions[risk_tolerance]}*")
+        
+        # Set default values when advanced settings are collapsed
+        if 'prediction_days' not in locals():
+            prediction_days = 30
+        if 'lstm_epochs' not in locals():
+            lstm_epochs = 50
+        if 'risk_tolerance' not in locals():
+            risk_tolerance = "Moderate"
+        
+        st.markdown("---")
+        
+        # Action Buttons with better UX
+        st.markdown("### 🎬 Ready to Analyze?")
+        
+        # Pre-analysis validation
+        can_analyze = True
+        validation_messages = []
+        
+        if not any([use_linear, use_lstm, use_prophet]):
+            can_analyze = False
+            validation_messages.append("❌ Select at least one AI model")
+        
+        if not selected_stock:
+            can_analyze = False
+            validation_messages.append("❌ Choose a stock symbol")
+        
+        # Display validation messages
+        if validation_messages:
+            for msg in validation_messages:
+                st.error(msg)
+        else:
+            st.success("✅ Ready to analyze!")
+        
+        # Action buttons
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            start_analysis = st.button(
+                "🚀 Start AI Analysis",
+                type="primary",
+                use_container_width=True,
+                disabled=not can_analyze,
+                help="Begin the stock prediction analysis with your selected settings"
+            )
+        
+        with col2:
+            clear_cache = st.button(
+                "🗑️ Reset",
+                use_container_width=True,
+                help="Clear cache and reset the application"
+            )
+        
+        # Handle button clicks
         if clear_cache:
             st.cache_data.clear()
-            st.success("Cache cleared!")
+            st.success("🔄 Cache cleared!")
+            st.rerun()
         
         if start_analysis:
-            if not any([use_linear, use_lstm, use_prophet]):
-                st.error("Please select at least one model!")
-            else:
-                st.session_state.run_analysis = True
-                st.session_state.selected_stock = selected_stock
-                st.session_state.selected_period = selected_period
-                st.session_state.models = {
-                    'linear_regression': use_linear,
-                    'lstm': use_lstm,
-                    'prophet': use_prophet
-                }
-                st.session_state.prediction_days = prediction_days
-                st.session_state.lstm_epochs = lstm_epochs
-                st.session_state.risk_tolerance = risk_tolerance
-    
+            if can_analyze:
+                # Show loading message
+                with st.spinner('🔄 Initializing AI analysis...'):
+                    st.session_state.run_analysis = True
+                    st.session_state.selected_stock = selected_stock
+                    st.session_state.selected_period = selected_period
+                    st.session_state.models = {
+                        'linear_regression': use_linear,
+                        'lstm': use_lstm,
+                        'prophet': use_prophet
+                    }
+                    st.session_state.prediction_days = prediction_days
+                    st.session_state.lstm_epochs = lstm_epochs
+                    st.session_state.risk_tolerance = risk_tolerance
+                
+                st.success(f"🎯 Analyzing {EXTENDED_INDIAN_STOCKS.get(selected_stock, selected_stock)}...")
+        
+        # Footer with helpful tips
+        st.markdown("---")
+        st.markdown("""
+        <div style='text-align: center; padding: 10px; background-color: #0E1117; border-radius: 5px; margin-top: 10px;'>
+            <small>
+            💡 <strong>Pro Tip</strong>: Stock predictions are estimates based on historical data.<br>
+            Always do your own research before making investment decisions!
+            </small>
+        </div>
+        """, unsafe_allow_html=True)
+        
     # Main content area
     if hasattr(st.session_state, 'run_analysis') and st.session_state.run_analysis:
         run_stock_analysis()
@@ -604,7 +1194,7 @@ def get_basic_stock_info(symbol):
             prev_price = hist['Close'].iloc[-2]
             change_pct = ((current_price - prev_price) / prev_price) * 100
             return {
-                'price': f"₹{current_price:.2f}",
+                'price': format_price(symbol, current_price),
                 'change': f"{change_pct:+.1f}%"
             }
     except:
@@ -634,11 +1224,9 @@ def run_stock_analysis():
     status_container = st.container()
     
     with progress_container:
-        progress_col1, progress_col2 = st.columns([3, 1])
-        with progress_col1:
-            progress_bar = st.progress(0)
-        with progress_col2:
-            progress_text = st.empty()
+        # Full-width progress bar and text
+        progress_bar = st.progress(0)
+        progress_text = st.empty()
     
     with status_container:
         status_text = st.empty()
@@ -756,7 +1344,7 @@ def display_enhanced_stock_info(data, stock):
         delta_text = f"{price_change:+.2f} ({price_change_pct:+.1f}%)"
         st.metric(
             "Current Price",
-            f"₹{current_price:.2f}",
+            format_price(stock, current_price),
             delta=delta_text
         )
     
@@ -798,7 +1386,7 @@ def display_enhanced_stock_info(data, stock):
     
     fig.update_layout(
         title=f'{stock} - Price History',
-        yaxis_title='Price (₹)',
+        yaxis_title=f"Price ({currency_symbol_for(stock)})",
         xaxis_title='Date',
         template='plotly_white',
         height=400
@@ -840,7 +1428,7 @@ def display_enhanced_results(predictor, results, future_pred, future_dates, risk
                 ">
                     <h3 style="color: {card_color}; margin: 0;">{crown}{model_name.upper()}</h3>
                     <hr style="border-color: {card_color};">
-                    <p><strong>RMSE:</strong> ₹{metrics['RMSE']:.2f}</p>
+                    <p><strong>RMSE:</strong> {currency_symbol_for(predictor.symbol)}{metrics['RMSE']:.2f}</p>
                     <p><strong>R²:</strong> {metrics['R²']:.4f}</p>
                     <p><strong>MAPE:</strong> {metrics['MAPE']:.1f}%</p>
                     <p><strong>Direction Accuracy:</strong> {metrics['Directional_Accuracy']:.1f}%</p>
@@ -887,7 +1475,7 @@ def plot_enhanced_predictions(predictor):
                 mode='lines',
                 name='Actual Price',
                 line=dict(color='#2E86AB', width=3),
-                hovertemplate='<b>Actual</b><br>Date: %{x}<br>Price: ₹%{y:.2f}<extra></extra>'
+                hovertemplate=f"<b>Actual</b><br>Date: %{{x}}<br>Price: {currency_symbol_for(predictor.symbol)}%{{y:.2f}}<extra></extra>"
             ))
             
             # Predicted prices
@@ -897,7 +1485,7 @@ def plot_enhanced_predictions(predictor):
                 mode='lines',
                 name='Predicted Price',
                 line=dict(color='#F24236', width=3, dash='dash'),
-                hovertemplate='<b>Predicted</b><br>Date: %{x}<br>Price: ₹%{y:.2f}<extra></extra>'
+                hovertemplate=f"<b>Predicted</b><br>Date: %{{x}}<br>Price: {currency_symbol_for(predictor.symbol)}%{{y:.2f}}<extra></extra>"
             ))
             
             # Calculate metrics for display
@@ -907,9 +1495,9 @@ def plot_enhanced_predictions(predictor):
             mape = np.mean(np.abs((pred_data['test_actual'] - pred_data['test_pred']) / pred_data['test_actual'])) * 100
             
             fig.update_layout(
-                title=f'{model_name.upper()} - Prediction Performance<br><sub>RMSE: ₹{rmse:.2f} | R²: {r2:.4f} | MAPE: {mape:.1f}%</sub>',
+                title=f"{model_name.upper()} - Prediction Performance<br><sub>RMSE: {currency_symbol_for(predictor.symbol)}{rmse:.2f} | R²: {r2:.4f} | MAPE: {mape:.1f}%</sub>",
                 xaxis_title='Date',
-                yaxis_title='Price (₹)',
+                yaxis_title=f"Price ({currency_symbol_for(predictor.symbol)})",
                 hovermode='x unified',
                 template='plotly_white',
                 height=500,
@@ -948,7 +1536,7 @@ def display_enhanced_future_predictions(future_pred, future_dates, predictor, ri
             name=model_name,
             line=dict(width=3, color=colors[i % len(colors)]),
             marker=dict(size=6),
-            hovertemplate=f'<b>{model_name}</b><br>Date: %{{x}}<br>Price: ₹%{{y:.2f}}<extra></extra>'
+            hovertemplate=f"<b>{model_name}</b><br>Date: %{{x}}<br>Price: {currency_symbol_for(predictor.symbol)}%{{y:.2f}}<extra></extra>"
         ))
     
     # Add current price line
@@ -956,14 +1544,14 @@ def display_enhanced_future_predictions(future_pred, future_dates, predictor, ri
         y=current_price, 
         line_dash="dot", 
         line_color="gray",
-        annotation_text=f"Current Price: ₹{current_price:.2f}",
+        annotation_text=f"Current Price: {currency_symbol_for(predictor.symbol)}{current_price:.2f}",
         annotation_position="top right"
     )
     
     fig.update_layout(
         title='🔮 Future Price Predictions',
         xaxis_title='Date',
-        yaxis_title='Predicted Price (₹)',
+        yaxis_title=f'Predicted Price ({currency_symbol_for(predictor.symbol)})',
         hovermode='x unified',
         template='plotly_white',
         height=500,
@@ -1195,7 +1783,7 @@ def plot_enhanced_technical_indicators(predictor):
     )
     
     # Update y-axes
-    fig.update_yaxes(title_text="Price (₹)", row=1, col=1)
+    fig.update_yaxes(title_text=f"Price ({currency_symbol_for(predictor.symbol)})", row=1, col=1)
     fig.update_yaxes(title_text="RSI", row=2, col=1, range=[0, 100])
     fig.update_yaxes(title_text="MACD", row=3, col=1)
     fig.update_yaxes(title_text="Volume", row=4, col=1)

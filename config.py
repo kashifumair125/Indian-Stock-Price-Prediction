@@ -3,6 +3,8 @@ Configuration file for Indian Stock Price Prediction System
 Modify these settings according to your requirements
 """
 
+import os
+
 # Stock Settings
 DEFAULT_STOCK = "RELIANCE.NS"  # Default stock to analyze
 DEFAULT_PERIOD = "2y"          # Data period: 1y, 2y, 5y, max
@@ -98,6 +100,20 @@ SHOW_PLOTS = True            # Whether to display plots
 CURRENCY_SYMBOL = "₹"        # Indian Rupee symbol
 CURRENCY_FORMAT = "{:.2f}"   # Price formatting
 
+# Currency symbols map (used for dynamic currency display)
+CURRENCY_SYMBOLS = {
+    'INR': '₹',
+    'USD': '$',
+    'EUR': '€',
+    'GBP': '£',
+    'JPY': '¥',
+    'CNY': '¥',
+    'HKD': 'HK$',
+    'AUD': 'A$',
+    'CAD': 'C$',
+    'SGD': 'S$',
+}
+
 # Data Quality Settings
 MIN_VOLUME_THRESHOLD = 1000  # Minimum volume threshold
 OUTLIER_THRESHOLD = 3        # Standard deviations for outlier detection
@@ -110,3 +126,12 @@ ALERT_THRESHOLDS = {
     'unusual_volume': 2.0,    # 2x average volume
     'price_change': 0.03      # 3% price change
 }
+
+# Live data / provider settings
+DATA_PROVIDER = os.getenv("DATA_PROVIDER", "yfinance")  # yfinance | finnhub | alphavantage | twelvedata
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
+ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
+TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY", "")
+
+# UI live refresh cadence (in seconds) for quote snapshots (only for yfinance/no-WS)
+LIVE_REFRESH_SECONDS = int(os.getenv("LIVE_REFRESH_SECONDS", "15"))

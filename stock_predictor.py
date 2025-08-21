@@ -52,55 +52,7 @@ except ImportError:
     except ImportError:
         PROPHET_AVAILABLE = False
 
-# Configuration constants
-class Config:
-    # Data directories
-    DATA_DIR = "data/"
-    RAW_DATA_DIR = "data/raw/"
-    PROCESSED_DATA_DIR = "data/processed/"
-    MODELS_DIR = "models/"
-    RESULTS_DIR = "results/"
-    PLOTS_DIR = "plots/"
-    PREDICTIONS_DIR = "predictions/"
-    
-    # Model parameters
-    MIN_DATA_POINTS = 30
-    TEST_SIZE = 0.2
-    LSTM_SEQUENCE_LENGTH = 10
-    LSTM_EPOCHS = 50
-    LSTM_BATCH_SIZE = 32
-    PREDICTION_DAYS = 30
-    
-    # Technical indicators
-    MA_PERIODS = [5, 10, 20, 50]
-    EMA_PERIODS = [12, 26]
-    RSI_PERIOD = 14
-    MACD_SIGNAL = 9
-    BB_PERIOD = 20
-    BB_STD = 2
-    
-    # Features
-    USE_LAG_FEATURES = True
-    LAG_PERIODS = [1, 2, 3, 5]
-    
-    # Display
-    CURRENCY_SYMBOL = "₹"
-    FIGURE_SIZE = (15, 10)
-    SAVE_PLOTS = True
-    SHOW_PLOTS = False
-    PLOT_FORMAT = "png"
-    DPI = 300
-    VERBOSE = 0
-    
-    # Prophet
-    PROPHET_SEASONALITY = {
-        'daily_seasonality': False,
-        'weekly_seasonality': True,
-        'yearly_seasonality': True
-    }
-    PROPHET_CHANGEPOINT_PRIOR_SCALE = 0.05
-
-config = Config()
+import config
 
 def safe_divide(numerator, denominator, default=0):
     """Safely divide two arrays/series, handling division by zero"""
@@ -907,8 +859,42 @@ class IndianStockPredictor:
         except Exception as e:
             print(f"⚠️ Could not save some results: {e}")
     
-        def get_stock_info(self):
-       
+    def plot_predictions(self):
+        """Plot actual vs predicted prices for all trained models"""
+        if not self.predictions:
+            print("⚠️ No predictions available to plot. Train a model first.")
+            return
+        
+        for model_name, pred_data in self.predictions.items():
+            try:
+                plt.figure(figsize=config.FIGURE_SIZE, dpi=config.DPI)
+                
+                # Actual
+                plt.plot(pred_data['test_dates'], pred_data['test_actual'], label='Actual', linewidth=2)
+                # Predicted
+                plt.plot(pred_data['test_dates'], pred_data['test_pred'], label='Predicted', linestyle='--', linewidth=2)
+                
+                plt.title(f"{self.symbol} - {model_name.upper()} Predictions")
+                plt.xlabel("Date")
+                plt.ylabel(f"Price ({config.CURRENCY_SYMBOL})")
+                plt.legend()
+                plt.tight_layout()
+                
+                if config.SAVE_PLOTS:
+                    os.makedirs(config.PLOTS_DIR, exist_ok=True)
+                    out_path = f"{config.PLOTS_DIR}{self.symbol}_{model_name}_predictions.{config.PLOT_FORMAT}"
+                    plt.savefig(out_path)
+                    print(f"🖼️ Saved plot: {out_path}")
+                
+                if config.SHOW_PLOTS:
+                    plt.show()
+                else:
+                    plt.close()
+            except Exception as e:
+                print(f"⚠️ Could not plot {model_name}: {e}")
+    
+    def get_stock_info(self):
+        """Get comprehensive stock information"""
         try:
             stock = yf.Ticker(self.symbol)
             info = stock.info
