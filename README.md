@@ -221,7 +221,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 - **GitHub Issues**: [Report bugs or request features](https://github.com/kashifumair125/Indian-Stock-Price-Prediction/issues)
 - **Email**: kashifumair125@gmail.com
-- **LinkedIn**: [Connect with me](https://linkedin.com/in/kashifumair125)
+- **LinkedIn**: [Connect with me](https://linkedin.com/in/umair-kashif)
 
 ## 🌟 Star History
 
