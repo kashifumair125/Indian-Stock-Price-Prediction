@@ -1,9 +1,9 @@
 """
 Indian Stock Price Prediction - Interactive Web Application
-Author: [Your Name]
+Premium Responsive Design with Modern UI/UX
 Date: 2025
 
-A beautiful Streamlit web interface for the stock prediction system.
+A beautiful, mobile-friendly Streamlit web interface for stock prediction.
 Run with: streamlit run web_app.py
 """
 from advanced_indicators import AdvancedTechnicalIndicators
@@ -23,71 +23,47 @@ import yfinance as yf
 from config import CURRENCY_SYMBOLS, CURRENCY_SYMBOL, LIVE_REFRESH_SECONDS
 import requests
 
+# Modern UI Components
+try:
+    from streamlit_option_menu import option_menu
+    from streamlit_extras.metric_cards import style_metric_cards
+    from streamlit_extras.colored_header import colored_header
+    from streamlit_extras.add_vertical_space import add_vertical_space
+except ImportError:
+    pass  # Graceful fallback if extras not installed
+
+# Premium Styles
+try:
+    from premium_styles import get_premium_css
+except ImportError:
+    def get_premium_css(dark_mode=False):
+        return "<style></style>"  # Fallback
+
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
-# Page configuration
+# Page configuration - Premium Responsive Setup
 st.set_page_config(
     page_title="Indian Stock Price Prediction",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': 'https://github.com/kashifumair125/Indian-Stock-Price-Prediction',
+        'Report a bug': 'https://github.com/kashifumair125/Indian-Stock-Price-Prediction/issues',
+        'About': '# Premium Stock Prediction System\nAI-Powered Stock Analysis with Modern UI/UX'
+    }
 )
 
-# Add custom CSS for sidebar toggle
-st.markdown("""
-<style>
-    /* Custom sidebar toggle button */
-    .sidebar-toggle-btn {
-        position: fixed;
-        top: 20px;
-        left: 20px;
-        z-index: 9999;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 60px;
-        height: 60px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
-        cursor: pointer;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-        transition: all 0.3s ease;
-        text-decoration: none;
-    }
-    
-    .sidebar-toggle-btn:hover {
-        transform: scale(1.1);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-    }
-    
-    /* Sidebar banner */
-    .sidebar-banner {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 15px;
-        border-radius: 10px;
-        text-align: center;
-        margin: 20px 0;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-    }
-    
-    /* Hide sidebar when needed */
-    .sidebar-hidden {
-        display: none !important;
-        visibility: hidden !important;
-    }
-    
-    /* Show sidebar when needed */
-    .sidebar-visible {
-        display: block !important;
-        visibility: visible !important;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Initialize session state for dark mode
+if 'dark_mode' not in st.session_state:
+    st.session_state.dark_mode = False
+
+def toggle_dark_mode():
+    st.session_state.dark_mode = not st.session_state.dark_mode
+
+# Apply Premium Responsive CSS
+st.markdown(get_premium_css(st.session_state.dark_mode), unsafe_allow_html=True)
 
 # Add experimental sidebar control
 try:
@@ -116,177 +92,13 @@ except ImportError as e:
     """)
     st.stop()
 
-# Enhanced Custom CSS for better styling
-st.markdown("""
-<style>
-    /* Main theme colors */
-    :root {
-        --primary-color: #1f77b4;
-        --secondary-color: #ff7f0e;
-        --success-color: #2ca02c;
-        --danger-color: #d62728;
-        --warning-color: #ff7f0e;
-        --info-color: #17a2b8;
-        --light-gray: #f8f9fa;
-        --dark-gray: #343a40;
-    }
-    
-    /* Hide Streamlit default elements */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    
-    /* Main header styling */
-    .main-header {
-        font-size: 3.5rem;
-        background: linear-gradient(90deg, #1f77b4, #ff7f0e);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        margin-bottom: 2rem;
-        font-weight: bold;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    /* Custom card styling */
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 15px;
-        color: white;
-        text-align: center;
-        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        margin: 0.5rem 0;
-    }
-    
-    .success-box {
-        padding: 1.5rem;
-        border-radius: 15px;
-        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        color: white;
-        margin: 1rem 0;
-        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-    }
-    
-    .warning-box {
-        padding: 1.5rem;
-        border-radius: 15px;
-        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-        color: white;
-        margin: 1rem 0;
-        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-    }
-    
-    .error-box {
-        padding: 1.5rem;
-        border-radius: 15px;
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        color: white;
-        margin: 1rem 0;
-        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-    }
-    
-    .info-box {
-        padding: 1.5rem;
-        border-radius: 15px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        margin: 1rem 0;
-        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-    }
-    
-    /* Sidebar styling */
-    .css-1d391kg {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
-    /* Button styling */
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 25px;
-        padding: 0.75rem 2rem;
-        font-weight: bold;
-        font-size: 1.1rem;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-        transition: all 0.3s ease;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-    }
-    
-    /* Progress bar styling */
-    .stProgress > div > div > div > div {
-        background: linear-gradient(90deg, #667eea, #764ba2);
-    }
-    /* Make progress container full width */
-    .stProgress > div { width: 100% !important; }
-    
-    /* Metric styling */
-    .metric-container {
-        background: rgba(255, 255, 255, 0.1);
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 0.5rem 0;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-    
-    /* Animation for loading */
-    @keyframes pulse {
-        0% { opacity: 1; }
-        50% { opacity: 0.5; }
-        100% { opacity: 1; }
-    }
-    
-    .loading {
-        animation: pulse 2s infinite;
-    }
-    
-    /* Enhanced table styling */
-    .dataframe {
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    }
-    
-    /* Redesigned pill-style for Popular Stocks buttons */
-    .popular-stock-btn button {
-        background: #ffffff !important;
-        color: #4b57c0 !important;
-        border: 2px solid #667eea !important;
-        border-radius: 9999px !important;
-        padding: 0.6rem 1.2rem !important;
-        font-weight: 700 !important;
-        font-size: 0.95rem !important;
-        width: 100% !important;
-        box-shadow: 0 4px 14px rgba(102, 126, 234, 0.12) !important;
-        transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
-    }
-    .popular-stock-btn button:hover {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: #ffffff !important;
-        transform: translateY(-1px);
-        box-shadow: 0 8px 18px rgba(102, 126, 234, 0.25) !important;
-        border-color: transparent !important;
-    }
-    .popular-stock-btn button:focus { outline: none !important; box-shadow: 0 0 0 3px rgba(102,126,234,0.25) !important; }
-    .popular-stock-btn { margin-bottom: 0.3rem; }
-</style>
-""", unsafe_allow_html=True)
+# Dark Mode Toggle Button
+col_dm1, col_dm2, col_dm3 = st.columns([1, 4, 1])
+with col_dm3:
+    dark_mode_label = "🌙 Dark" if not st.session_state.dark_mode else "☀️ Light"
+    if st.button(dark_mode_label, key="dark_mode_toggle", use_container_width=True):
+        toggle_dark_mode()
+        st.rerun()
 
 # Enhanced stock list with more Indian stocks
 EXTENDED_INDIAN_STOCKS = {
@@ -525,13 +337,40 @@ def create_custom_metric(title, value, delta=None, color="#1f77b4"):
 
 def main():
     """Main Streamlit application"""
-    
+
     # Initialize sidebar state
     if 'sidebar_visible' not in st.session_state:
         st.session_state.sidebar_visible = True
-    
+
+    # Initialize first-time user flag
+    if 'first_visit' not in st.session_state:
+        st.session_state.first_visit = True
+
     # Animated Header
     show_animated_header()
+
+    # Welcome Message for First-Time Users
+    if st.session_state.first_visit:
+        st.markdown("""
+        <div class="info-box" style="animation: pulse 2s ease-in-out;">
+            <h3>👋 Welcome to the Premium Stock Prediction Platform!</h3>
+            <p><strong>Quick Tips to Get Started:</strong></p>
+            <ul style="text-align: left; margin: 1rem 0;">
+                <li>🎨 <strong>Dark Mode Available</strong>: Click the toggle button at the top-right</li>
+                <li>📱 <strong>Mobile Friendly</strong>: Works perfectly on all devices</li>
+                <li>🚀 <strong>Quick Start</strong>: Use the sidebar to select a stock and start analyzing</li>
+                <li>💡 <strong>Beginner?</strong> Expand "New to Stock Prediction?" in the sidebar</li>
+                <li>📊 <strong>Popular Stocks</strong>: Click TCS, Reliance, or HDFC Bank to start quickly</li>
+            </ul>
+            <p style="margin-top: 1rem;"><em>🎯 Tip: Select all 3 AI models for the most accurate predictions!</em></p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col1, col2, col3 = st.columns([2, 1, 2])
+        with col2:
+            if st.button("✅ Got it!", use_container_width=True, key="dismiss_welcome"):
+                st.session_state.first_visit = False
+                st.rerun()
     
     # Add JavaScript-based sidebar toggle
     st.markdown("""
