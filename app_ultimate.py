@@ -17,7 +17,7 @@ Author: Umair Kashif
 
 import streamlit as st
 
-# Page config - MUST BE FIRST STREAMLIT COMMAND
+# Page config MUST BE FIRST!
 st.set_page_config(
     page_title="Ultimate Stock Analysis Platform",
     page_icon="📈",
@@ -25,6 +25,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Now import everything else
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -68,7 +69,7 @@ except ImportError as e:
 try:
     from fundamental_data import FundamentalAnalyzer
 except ImportError as e:
-    st.warning(f"Failed to import FundamentalAnalyzer: {e}")
+    st.error(f"Module import error: {e}")
 
 # ==================== SESSION STATE ====================
 def init_session_state():
