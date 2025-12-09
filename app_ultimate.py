@@ -16,6 +16,15 @@ Author: Umair Kashif
 """
 
 import streamlit as st
+
+# Page config - MUST BE FIRST STREAMLIT COMMAND
+st.set_page_config(
+    page_title="Ultimate Stock Analysis Platform",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -28,22 +37,38 @@ import sys
 
 # Add modules
 sys.path.append('.')
+
+# Initialize imports with error handling
+IndianStockPredictor = None
+BacktestingEngine = None
+NewsSentimentAnalyzer = None
+AlertsSystem = None
+FundamentalAnalyzer = None
+
 try:
     from stock_predictor import IndianStockPredictor
+except ImportError as e:
+    st.warning(f"Failed to import IndianStockPredictor: {e}")
+
+try:
     from backtesting_engine import BacktestingEngine
+except ImportError as e:
+    st.warning(f"Failed to import BacktestingEngine: {e}")
+
+try:
     from news_sentiment import NewsSentimentAnalyzer
+except ImportError as e:
+    st.warning(f"Failed to import NewsSentimentAnalyzer: {e}")
+
+try:
     from alerts_system import AlertsSystem
+except ImportError as e:
+    st.warning(f"Failed to import AlertsSystem: {e}")
+
+try:
     from fundamental_data import FundamentalAnalyzer
 except ImportError as e:
-    st.error(f"Module import error: {e}")
-
-# Page config
-st.set_page_config(
-    page_title="Ultimate Stock Analysis Platform",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+    st.warning(f"Failed to import FundamentalAnalyzer: {e}")
 
 # ==================== SESSION STATE ====================
 def init_session_state():
@@ -54,7 +79,10 @@ def init_session_state():
     if 'watchlist' not in st.session_state:
         st.session_state.watchlist = ['TCS.NS', 'RELIANCE.NS', 'AAPL', 'GOOGL']
     if 'alerts_system' not in st.session_state:
-        st.session_state.alerts_system = AlertsSystem()
+        if AlertsSystem is not None:
+            st.session_state.alerts_system = AlertsSystem()
+        else:
+            st.session_state.alerts_system = None
     if 'market_region' not in st.session_state:
         st.session_state.market_region = 'India (NSE)'
 
