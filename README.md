@@ -1,14 +1,16 @@
 # 📈 Indian Stock Price Prediction System
 
 [![HuggingFace Spaces](https://img.shields.io/badge/🤗%20HuggingFace-Spaces-orange)](https://huggingface.co/spaces/kashii1/indian-stock-prediction)
-[![Docker](https://img.shields.io/badge/Docker-Hub-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/kashifumair125/indian-stock-prediction)
+[![Docker](https://img.shields.io/badge/Docker-Hub-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/kashii1/indian-stock-prediction)
 [![CI/CD](https://github.com/kashifumair125/Indian-Stock-Price-Prediction/actions/workflows/deploy.yml/badge.svg)](https://github.com/kashifumair125/Indian-Stock-Price-Prediction/actions)
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
+
 > **ML-powered price prediction for 30+ Indian NSE stocks** — three scikit-learn models, 30+ engineered features, interactive Streamlit dashboard.
 
-🔗 **[Live Demo →](https://huggingface.co/spaces/kashii1/indian-stock-prediction)**
+🔗 **[Live Demo HuggingFace →](https://huggingface.co/spaces/kashii1/indian-stock-prediction)**
+🔗 **[Live Demo GCP →](https://indian-stock-prediction-1078044545456.asia-south1.run.app)**
 
 ---
 
