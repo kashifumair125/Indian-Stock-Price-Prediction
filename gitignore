@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv/
+venv/
+dist/
+build/
+.DS_Store
+*.csv
+*.pkl
+*.joblib
+data/
+results/
+models/
+.streamlit/secrets.toml
